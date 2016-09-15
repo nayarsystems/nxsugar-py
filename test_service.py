@@ -27,7 +27,7 @@ from unittest import TextTestRunner
 import os
 import sys
 
-from service import Service, Server
+from nxsugarpy import Service, Server
 
 def test(task):
     return task.params, None

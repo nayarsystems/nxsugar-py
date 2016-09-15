@@ -26,7 +26,7 @@ with open('README.rst') as f:
     long_description = f.read()
 
 setup(
-    name='nxsugar-py',
+    name='nxsugarpy',
     version='1.3.5',
     description='Build microservices over Nexus',
     long_description=long_description,
@@ -48,7 +48,7 @@ setup(
         'Programming Language :: Python :: 3.5',
     ],
     keywords='nexus distributed microservices',
-    packages=['nxsugar-py'],
+    packages=['nxsugarpy'],
     install_requires=[
         'pynexus',
     ],

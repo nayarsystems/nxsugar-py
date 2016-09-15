@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 ##############################################################################
 #
-#    pynexus, a Python library for easy playing with Nexus
+#    nxsugar-py, build microservices over Nexus
 #    Copyright (C) 2016 by the pynexus team
 #
 #    This program is free software: you can redistribute it and/or modify

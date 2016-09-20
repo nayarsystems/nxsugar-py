@@ -51,5 +51,6 @@ setup(
     packages=['nxsugarpy'],
     install_requires=[
         'pynexus',
+        'strict-rfc3339'
     ],
 )

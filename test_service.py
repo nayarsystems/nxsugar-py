@@ -20,14 +20,14 @@
 ##############################################################################
 
 import sys
-sys.path.insert(0, '..')
 import pynexus as nxpy
 import unittest
 from unittest import TextTestRunner
 import os
 import sys
+import threading
 
-from nxsugarpy import Service, Server
+from nxsugarpy import Service, Server, replyToWrapper
 
 def test(task):
     return task.params, None
@@ -72,32 +72,33 @@ class TestService(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    client = nxpy.Client("tcp://root:root@%s:%s" % (os.environ.get("NEXUS_HOST", "localhost"),
-                                                    os.environ.get("NEXUS_TCP_PORT", "1717")))
-
     # Standalone services
     service = Service("tcp://root:root@%s:%s" % (os.environ.get("NEXUS_HOST", "localhost"),
                                                 os.environ.get("NEXUS_TCP_PORT", "1717")),
         "test.python.sugar", {"testing": True})
-    service.add_method("test1", test)
-    service.add_method("test3", test)
-    service.add_method("test4", test)
-    service.start()
+    service.addMethod("test1", test)
+    service.addMethod("test3", replyToWrapper(test))
+    service.addMethod("test4", replyToWrapper(test))
+
+    serviceWorker = threading.Thread(target=service.serve)
+    serviceWorker.start()
+
+    client = nxpy.Client("tcp://root:root@%s:%s" % (os.environ.get("NEXUS_HOST", "localhost"),
+                                                    os.environ.get("NEXUS_TCP_PORT", "1717")))
 
     # Server with services sharing one connection
     server = Server("tcp://root:root@%s:%s" %  (os.environ.get("NEXUS_HOST", "localhost"),
                                                 os.environ.get("NEXUS_TCP_PORT", "1717")))
 
-    service1 = server.add_service("test.python.sugar1", {"testing": True})
-    service1.add_method("test", test)
+    service1 = server.addService("service1", "test.python.sugar1", {"testing": True})
+    service1.addMethod("test", test)
+    service2 = server.addService("service2", "test.python.sugar2", {"testing": True})
+    service2.addMethod("test", test)
+    service3 = server.addService("service3", "test.python.sugar3", {"testing": True})
+    service3.addMethod("test", test)
 
-    service2 = server.add_service("test.python.sugar2", {"testing": True})
-    service2.add_method("test", test)
-
-    service3 = server.add_service("test.python.sugar3", {"testing": True})
-    service3.add_method("test", test)
-
-    server.start()
+    serverWorker = threading.Thread(target=server.serve)
+    serverWorker.start()
 
     # Run tests and stop everything
     test_suite_service = unittest.TestLoader().loadTestsFromTestCase(TestService)
@@ -106,6 +107,10 @@ if __name__ == "__main__":
     test_result_server = TextTestRunner().run(test_suite_server)
     service.stop()
     server.stop()
-    client.cancel()
-    if not test_result_service.wasSuccessful() or not test_result_server.wasSuccessful():
+    client.close()
+    serviceWorker.join()
+    serverWorker.join()
+    if not test_result_service.wasSuccessful():
+        sys.exit(1)
+    if not test_result_server.wasSuccessful():
         sys.exit(1)

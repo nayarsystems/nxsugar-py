@@ -24,10 +24,11 @@ import nxsugarpy.info as info
 from nxsugarpy.log import *
 from nxsugarpy.errors import *
 from nxsugarpy.helpers import *
+from nxsugarpy.stats import *
+from nxsugarpy.signal import  *
 
 import time
 import threading
-import signal
 import traceback
 
 try:
@@ -40,7 +41,7 @@ try:
 except ImportError:
     from urlparse import urlparse
 
-StateInitializing, StateConnecting, StateLoggingIn, StateServing, StateStopped = range(5)
+StateInitializing, StateConnecting, StateServing, StateStopped = range(4)
 _connStateStr = {
     StateInitializing: "initializing",
     StateConnecting:   "connecting",
@@ -57,48 +58,26 @@ class Method(object):
         self.f = f
         self.testf = testf
 
-def _defMethodWrapper(f):
-    def wrapped(task):
-        res, err = f(task)
-        if res != None:
-            task.tags["@local-response-result"] = res
-        if err != None:
-            task.tags["@local-response-error"] = err
-        if "@local-repliedTo" in task.tags:
-            return
-        if err != None:
-            err = formatAsJsonRpcErr(err)
-            task.sendError(err["code"], err["message"], err["data"])
-        else:
-            task.sendResult(res)
-    return wrapped
-
-def replyToWrapper(f):
-    def wrapped(task):
-        if isinstance(task.params, dict) and "replyTo" in task.params and isinstance(task.params["replyTo"], dict):
-            replyTo = task.params["replyTo"]
-            if "path" in replyTo and isinstance(replyTo["path"], str) and "type" in replyTo and isinstance(replyTo["type"], str) and replyTo["type"] in ["pipe", "service"]:
-                res, errm = f(task)
-                task.params["@local-repliedTo"] = True
-                _, err = task.accept()
-                if err != None:
-                    log(WarnLevel, "replyto wrapper", "could not accept task: {0}", errToStr(err))
-                elif replyTo["type"] == "pipe":
-                    pipe, err = task.nexusConn.pipeOpen(replyTo["path"])
-                    if err != None:
-                        log(WarnLevel, "replyto wrapper", "could not open received pipeId ({0}): {1}", replyTo["path"], errToStr(err))
-                    else:
-                        _, err = pipe.write({"result": res, "error": errm})
-                        if err != None:
-                            log(WarnLevel, "replyto wrapper", "error writing response to pipe: %s", errToStr(err))
-                elif replyTo["type"] == "service":
-                    _, err = task.nexusConn.taskPush(replyTo["path"], {"result": res, "error": errm}, timeout=30, detach=True)
-                    if err != None:
-                        log(WarnLevel, "replyto wrapper", "could not push response task to received path ({0}): {1}", replyTo["path"], errToStr(err))
-                return res, errm
-            return f(task)
-        return f(task)
-    return wrapped
+def _populateOpts(opts={}):
+    if opts == None:
+        opts = {}
+    if "pulls" not in opts or opts["pulls"] <= 0:
+        opts["pulls"] = 1
+    if "pullTimeout" not in opts:
+        opts["pullTimeout"] = 3600
+    if opts["pullTimeout"] <= 0:
+        opts["pullTimeout"] = 0
+    if "maxThreads" not in opts or opts["maxThreads"] <= 0:
+        opts["maxThreads"] = 1
+    if opts["maxThreads"] < opts["pulls"]:
+        opts["maxThreads"] = opts["pulls"]
+    if "testing" not in opts:
+        opts["testing"] = False
+    if "preaction" not in opts:
+        opts["preaction"] = None
+    if "postaction" not in opts:
+        opts["postaction"] = None
+    return opts
 
 class Service(object):
     def __init__(self, url, path, opts = {}):
@@ -115,7 +94,7 @@ class Service(object):
         self.maxThreads = opts["maxThreads"]
         self.statsPeriod = 300
         self.gracefulExit = 20
-        self.logLevel = "info"
+        self.logLevel = InfoLevel
         self.version = "0.0.0"
         self.testing = opts["testing"]
         self.connState = None
@@ -125,25 +104,22 @@ class Service(object):
         self._handler = None
         self._stats = None
 
-        self._cmdQueue = None
+        self._cmdQueue = Queue(self.pulls + 1024)
         self._threadsSem = None
         self._taskWorkers = {}
         self._taskWorkersLock = None
         self._statsTicker = None
         self._stopLock = None
         self._stopping = False
+        self._addedAsStoppable = False
 
         self._debugEnabled = False
         self._sharedConn = False
         self._connid = ""
 
         # only in nsugar-py
-        self._preaction = None
-        if "preaction" in opts:
-            self._preaction = opts["preaction"]
-        self.postaction = None
-        if "postaction" in opts:
-            self._postaction = opts["postaction"]
+        self._preaction = opts["preaction"]
+        self._postaction = opts["postaction"]
 
     def getConn(self):
         return self._nc
@@ -151,7 +127,7 @@ class Service(object):
     def _setConn(self, conn):
         self._nc = conn
         self._sharedConn = True
-        self._connid = conn.id()
+        self._connid = conn.connid
 
     def addMethod(self, name, f, testf=None, schema=None):
         if len(self._methods) == 0:
@@ -263,24 +239,26 @@ class Service(object):
         return [x for x in self._methods.keys()]
 
     def gracefulStop(self):
-        try:
-            self._cmdQueue.put_nowait(("graceful", ""))
-        except Full:
-            log(PanicLevel, "queue", "cmdQueue is full")
-            pass
+        if self._cmdQueue != None:
+            try:
+                self._cmdQueue.put_nowait(("graceful", ""))
+            except Full:
+                log(PanicLevel, "queue", "cmdQueue is full")
+                pass
 
     def stop(self):
-        try:
-            self._cmdQueue.put_nowait(("stop", ""))
-        except Full:
-            log(PanicLevel, "queue", "cmdQueue is full")
-            pass
+        if self._cmdQueue != None:
+            try:
+                self._cmdQueue.put_nowait(("stop", ""))
+            except Full:
+                log(PanicLevel, "queue", "cmdQueue is full")
+                pass
 
     def _setState(self, state):
         if self.connState != None:
             self.connState(self.getConn(), state)
 
-    def serve(self):
+    def serve(self, errQueue=None):
         self._setState(StateInitializing)
 
         self.setLogLevel(self.logLevel)
@@ -318,8 +296,8 @@ class Service(object):
                 self.user = nxurl.username
             if self.password == "" and nxurl.password != None:
                 self.password = nxurl.password
+            self.url = "{0}://{1}:{2}".format(nxurl.scheme, nxurl.hostname, nxurl.port)
             connurl = "{0}://{1}:{2}@{3}:{4}".format(nxurl.scheme, self.user, self.password, nxurl.hostname, nxurl.port)
-            self.url = connurl
 
             try:
                 self._nc = nxpy.Client(connurl)
@@ -327,6 +305,8 @@ class Service(object):
                 errs = "can't connect to nexus server ({0}): {1}".format(connurl, str(e))
                 logWithFields(ErrorLevel, "server", {"type": "connection_error"}, errs)
                 return errs
+            if not self._nc.is_version_compatible:
+                logWithFields(WarnLevel, "server", {"type": "incompatible_version"}, "connecting to an incompatible version of nexus at ({0}): client ({1}) server ({2})", self.url, nxpy.__version__, self._nc.nexus_version)
             if not self._nc.is_logged:
                 errs = "can't login to nexus server ({0}) as ({1}): {2}".format(connurl, self.user, errToStr(self._nc.login_error))
                 logWithFields(ErrorLevel, "server", {"type": "login_error"}, errs)
@@ -339,7 +319,6 @@ class Service(object):
         self.logWithFields(InfoLevel, self._logMap(), str(self))
 
         # Serve
-        self._cmdQueue = Queue(1024)
         self._stats = Stats()
         self._stopping = False
         self._stopLock = threading.Lock()
@@ -355,15 +334,10 @@ class Service(object):
             pullWorkers.append(worker)
             worker.start()
 
-        # Wait for signals
-        origSignalHandler = signal.getsignal(signal.SIGINT)
-        if not self._sharedConn:
-            signal.signal(signal.SIGINT, self._firstSignalHandler)
+        if not self._sharedConn and not self._addedAsStoppable:
+            addStoppable(self)
+            self._addedAsStoppable = True
 
-        # Wait until the nexus connection ends
-        # waitConnEnded = threading.Thread(target=self._waitConnEndedWorker)
-        # waitConnEnded.daemon = True
-        # waitConnEnded.start()
         gracefulTimeout = None
         if self.statsPeriod > 0:
             self._statsTicker = threading.Timer(self.statsPeriod, self._statsTickerHandler)
@@ -420,12 +394,19 @@ class Service(object):
                 self.logWithFields(ErrorLevel, {"type": "connection_ended"}, errs)
                 break
 
-        signal.signal(signal.SIGINT, origSignalHandler)
-        # waitConnEnded = None
         if gracefulTimeout != None:
             gracefulTimeout.cancel()
         if self._statsTicker != None:
             self._statsTicker.cancel()
+        self._nc = None
+        self._setState(StateStopped)
+
+        if errQueue != None:
+            try:
+                errQueue.put_nowait(errs)
+            except Full:
+                log(PanicLevel, "queue", "errQueue is full")
+                pass
 
         return errs
 
@@ -495,6 +476,13 @@ class Service(object):
             if isinstance(task.params, dict) and "@metadata" in task.params:
                 metadata = task.params["@metadata"]
 
+            if self._preaction != None:
+                try:
+                    self._preaction(task)
+                except Exception:
+                    tbck = traceback.format_exc()
+                    self.log(ErrorLevel, {"type": "task_exception"}, "pull {0}: panic serving task on preaction: {1}", n, tbck)
+
             # Pact: return mock
             if "pact" in metadata and metadata["pact"]:
                 pactOk = False
@@ -534,9 +522,16 @@ class Service(object):
                         self.log(InfoLevel, "not implemented: we should check the following error schema here: {0}", method.errSchema)
                         # Implement jscon schema validation!
 
+            if self._postaction != None:
+                try:
+                    self._postaction(task)
+                except Exception:
+                    tbck = traceback.format_exc()
+                    self.log(ErrorLevel, {"type": "task_exception"}, "pull {0}: panic serving task on postaction: {1}", n, tbck)
+
             self._stats.addTasksServed(1)
 
-        except Exception as e:
+        except Exception:
             self._stats.addTaskPanic(1)
             tbck = traceback.format_exc()
             self.logWithFields(ErrorLevel, {"type": "task_exception"}, "pull {0}: panic serving task: {1}", n, tbck)
@@ -591,15 +586,6 @@ class Service(object):
         self._statsTicker = threading.Timer(self.statsPeriod, self._statsTickerHandler)
         self._statsTicker.daemon = True
         self._statsTicker.start()
-
-    def _firstSignalHandler(self, sign, frame):
-        signal.signal(signal.SIGINT, self._secondSignalHandler)
-        logWithFields(DebugLevel, "signal", {"type": "graceful_requested"}, "received SIGINT: stop gracefuly")
-        self.gracefulStop()
-
-    def _secondSignalHandler(self, sign, frame):
-        logWithFields(DebugLevel, "signal", {"type": "stop_requested"}, "received SIGINT again: stop")
-        self.stop()
 
     def _setStopping(self):
         self._stopLock.acquire()
@@ -664,19 +650,45 @@ class Service(object):
         tup = (self._stats.threadsUsed, self.maxThreads, self._stats.taskPullsDone, self._stats.taskPullTimeouts, self._stats.tasksPulled, self._stats.tasksPanic, self._stats.tasksMethodNotFound, self._stats.tasksServed, self._stats.tasksRunning)
         return "stats: threads[ {0}/{1} ] task_pulls[ done={2} timeouts={3} ] tasks[ pulled={4} panic={5} errmethod={6} served={7} running={8} ]".format(*tup)
 
-def _populateOpts(opts={}):
-    if opts == None:
-        opts = {}
-    if "pulls" not in opts or opts["pulls"] <= 0:
-        opts["pulls"] = 1
-    if "pullTimeout" not in opts:
-        opts["pullTimeout"] = 3600
-    if opts["pullTimeout"] <= 0:
-        opts["pullTimeout"] = 0
-    if "maxThreads" not in opts or opts["maxThreads"] <= 0:
-        opts["maxThreads"] = 1
-    if opts["maxThreads"] < opts["pulls"]:
-        opts["maxThreads"] = opts["pulls"]
-    if "testing" not in opts:
-        opts["testing"] = False
-    return opts
+def _defMethodWrapper(f):
+    def wrapped(task):
+        res, err = f(task)
+        if res != None:
+            task.tags["@local-response-result"] = res
+        if err != None:
+            task.tags["@local-response-error"] = err
+        if "@local-repliedTo" in task.tags:
+            return
+        if err != None:
+            err = formatAsJsonRpcErr(err)
+            task.sendError(err["code"], err["message"], err["data"])
+        else:
+            task.sendResult(res)
+    return wrapped
+
+def replyToWrapper(f):
+    def wrapped(task):
+        if isinstance(task.params, dict) and "replyTo" in task.params and isinstance(task.params["replyTo"], dict):
+            replyTo = task.params["replyTo"]
+            if "path" in replyTo and isinstance(replyTo["path"], str) and "type" in replyTo and isinstance(replyTo["type"], str) and replyTo["type"] in ["pipe", "service"]:
+                res, errm = f(task)
+                task.tags["@local-repliedTo"] = True
+                _, err = task.accept()
+                if err != None:
+                    log(WarnLevel, "replyto wrapper", "could not accept task: {0}", errToStr(err))
+                elif replyTo["type"] == "pipe":
+                    pipe, err = task.nexusConn.pipeOpen(replyTo["path"])
+                    if err != None:
+                        log(WarnLevel, "replyto wrapper", "could not open received pipeId ({0}): {1}", replyTo["path"], errToStr(err))
+                    else:
+                        _, err = pipe.write({"result": res, "error": errm, "task": {"path": task.path, "method": task.method, "params": task.params, "tags": task.tags}})
+                        if err != None:
+                            log(WarnLevel, "replyto wrapper", "error writing response to pipe: {0}", errToStr(err))
+                elif replyTo["type"] == "service":
+                    _, err = task.nexusConn.taskPush(replyTo["path"], {"result": res, "error": errm, "task": {"path": task.path, "method": task.method, "params": task.params, "tags": task.tags}}, timeout=30, detach=True)
+                    if err != None:
+                        log(WarnLevel, "replyto wrapper", "could not push response task to received path ({0}): {1}", replyTo["path"], errToStr(err))
+                return res, errm
+            return f(task)
+        return f(task)
+    return wrapped

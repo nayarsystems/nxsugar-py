@@ -19,26 +19,38 @@
 #
 ##############################################################################
 
-def secondsToStr(secs):
-    out = ""
-    if secs < 1:
-        return "{0:.4f}s".format(secs)
-    elif secs < 60:
-        return "{0:.0f}s".format(secs)
-    elif secs < 3600:
-        mins = secs/60
-        rsecs = secs%60
-        out = "{0:.0f}m".format(mins)
-        if rsecs > 0:
-            out = "{0}{1:.0f}s".format(out, rsecs)
-    else:
-        hours = secs / 3600
-        rsecs = secs % 3600
-        out = "{0:.0f}h".format(hours)
-        if rsecs > 0:
-            rmins = rsecs / 60
-            rsecs = rsecs % 60
-            out = "{0}{1:.0f}m".format(out, rmins)
-            if rsecs > 0:
-                out = "{0}{1:.0f}s".format(out, rsecs)
-    return out
+from .log import *
+import signal
+
+def disableSigintHandler():
+    signal.signal(signal.SIGINT, _origSignalHandler)
+
+def enableSigintHandler():
+    global _origSignalHandler
+    _origSignalHandler = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, _firstSignalHandler)
+
+def _firstSignalHandler(sign, frame):
+    signal.signal(signal.SIGINT, _secondSignalHandler)
+    logWithFields(DebugLevel, "signal", {"type": "graceful_requested"}, "received SIGINT: stop gracefuly")
+    for s in _stoppables:
+        s.gracefulStop()
+
+def _secondSignalHandler(sign, frame):
+    logWithFields(DebugLevel, "signal", {"type": "stop_requested"}, "received SIGINT again: stop")
+    for s in _stoppables:
+        s.stop()
+
+def addStoppable(s):
+    global _stoppables
+    _stoppables.append(s)
+
+def clearStoppables():
+    global _stoppables
+    _stoppables = []
+
+_stoppables = []
+_origSignalHandler = None
+
+enableSigintHandler()
+

@@ -69,11 +69,15 @@ ErrStr = {
 }
 
 def newJsonRpcErr(code, message, data):
-    return formatAsJsonRpcErr({"code": code, "message": message, "data": data})
+    return {"code": code, "message": message, "data": data}
 
 def formatAsJsonRpcErr(err):
     if not isinstance(err, dict):
-        return {"code": 0, "message": "", "data": None}
+        try:
+            msg = str(err)
+            return {"code": 0, "message": msg, "data": None}
+        except:
+            return {"code": 0, "message": "", "data": err}
     code = 0
     if "code" in err:
         code = err["code"]
@@ -95,5 +99,5 @@ def errToStr(err):
     return "[{0}] {1}".format(code, message)
 
 def isNexusErrCode(err, code):
-    formatAsJsonRpcErr(err)
+    err = formatAsJsonRpcErr(err)
     return err["code"] == code

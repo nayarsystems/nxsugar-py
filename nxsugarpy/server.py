@@ -32,6 +32,8 @@ except ImportError:
 class Server(object):
     def __init__(self, url):
         self.url = url
+        self._showurl = ""
+        self._connurl = ""
         self.user = ""
         self.password = ""
         self.pulls = 1
@@ -91,6 +93,8 @@ class Server(object):
 
     def addService(self, name, path, opts=None):
         svc = Service(self.url, path, {"pulls": self.pulls, "pullTimeout": self.pullTimeout, "maxThreads": self.maxThreads, "testing": self.testing})
+        svc.user = self.user
+        svc.password = self.password
         svc.name = name
         svc.logLevel = self.logLevel
         svc.statsPeriod = self.statsPeriod
@@ -121,30 +125,29 @@ class Server(object):
             return errs
 
         # Dial and login
-        nxurl = urlparse(self.url)
-        if self.user == "" and nxurl.username != None:
-            self.user = nxurl.username
-        if self.password == "" and nxurl.password != None:
-            self.password = nxurl.password
-        self.url = "{0}://{1}:{2}".format(nxurl.scheme, nxurl.hostname, nxurl.port)
+        scheme, user, password, host, port = parseNexusUrl(self.url, self.user, self.password)
+        self.user = user
+        self.password = password
+        self._showurl = "{0}://{1}:{2}".format(scheme, host, port)
+        self._connurl = "{0}://{1}:{2}@{3}:{4}".format(scheme, user, password, host, port)
         for _, svc in self._services.items():
+            svc.url = self.url
+            svc._showurl = self._showurl
+            svc._connurl = self._connurl
             svc.user = self.user
             svc.password = self.password
-            svc.url = self.url
-        connurl = "{0}://{1}:{2}@{3}:{4}".format(nxurl.scheme, self.user, self.password, nxurl.hostname, nxurl.port)
-
 
         self._setState(StateConnecting)
         try:
-            self._nc = nxpy.Client(connurl)
+            self._nc = nxpy.Client(self._connurl)
         except Exception as e:
-            errs = "can't connect to nexus server ({0}): {1}".format(connurl, str(e))
+            errs = "can't connect to nexus server ({0}): {1}".format(self._showurl, str(e))
             logWithFields(ErrorLevel, "server", {"type": "connection_error"}, errs)
             return errs
         if not self._nc.is_version_compatible:
-            logWithFields(WarnLevel, "server", {"type": "incompatible_version"}, "connecting to an incompatible version of nexus at ({0}): client ({1}) server ({2})", self.url, nxpy.__version__, self._nc.nexus_version)
+            logWithFields(WarnLevel, "server", {"type": "incompatible_version"}, "connecting to an incompatible version of nexus at ({0}): client ({1}) server ({2})", self._showurl, nxpy.__version__, self._nc.nexus_version)
         if not self._nc.is_logged:
-            errs = "can't login to nexus server ({0}) as ({1}): {2}".format(connurl, self.user, errToStr(self._nc.login_error))
+            errs = "can't login to nexus server ({0}) as ({1}): {2}".format(self._showurl, self.user, errToStr(self._nc.login_error))
             logWithFields(ErrorLevel, "server", {"type": "login_error"}, errs)
             return errs
 

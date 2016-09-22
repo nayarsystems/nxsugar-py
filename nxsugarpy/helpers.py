@@ -19,6 +19,12 @@
 #
 ##############################################################################
 
+try:
+    from urllib.parse import urlparse
+except ImportError:
+    from urlparse import urlparse
+import re
+
 def secondsToStr(secs):
     out = ""
     if secs < 1:
@@ -42,3 +48,31 @@ def secondsToStr(secs):
             if rsecs > 0:
                 out = "{0}{1:.0f}s".format(out, rsecs)
     return out
+
+def parseNexusUrl(url, user="", password=""):
+    if re.match(r'''[a-zA-Z0-9]*://.*''', url) == None:
+        url = "tcp://"+url
+    nxurl = urlparse(url)
+    if user == "" and nxurl.username != None:
+        user = nxurl.username
+    if password == "" and nxurl.password != None:
+        password = nxurl.password
+    scheme = nxurl.scheme
+    if not nxurl.scheme:
+        scheme = "tcp"
+    host = nxurl.hostname
+    if not nxurl.hostname:
+        host = "localhost"
+    port = nxurl.port
+    if not nxurl.port:
+        if scheme == "tcp":
+            port = 1717
+        elif scheme == "ssl":
+            port = 1718
+        elif scheme == "ws":
+            port = 80
+        elif scheme == "wss":
+            port = 443
+        else:
+            port = 1717
+    return scheme, user, password, host, port

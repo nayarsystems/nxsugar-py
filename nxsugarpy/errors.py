@@ -68,7 +68,7 @@ ErrStr = {
     ErrPactNotDefined:           "Pact not defined for provided input",
 }
 
-def newJsonRpcErr(code, message, data):
+def newJsonRpcErr(code, message="", data=None):
     return {"code": code, "message": message, "data": data}
 
 def formatAsJsonRpcErr(err):

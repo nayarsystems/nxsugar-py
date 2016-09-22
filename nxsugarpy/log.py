@@ -81,13 +81,13 @@ def log(level, path, message, *args, **kwargs):
 
 def logWithFields(level, path, fields, message, *args, **kwargs):
     if _level <= _getLogLevelNum(level):
-        level = level[:4].upper()
         try:
             msg = message.format(*args, **kwargs)
         except:
             msg = "<invalid format> msg[ {0} ] args[ {1} ] kwargs[ {2} ]".format(message, args, kwargs)
         if _jsonEnabled:
             jsonData = json.dumps(fields)
-            print('''{"time": "{time}", "level": "{level}", "path": "{path}", "msg": "{message}", "data": {data}}'''.format(time=strict_rfc3339.now_to_rfc3339_utcoffset(), level=level, path=path, message=msg, data=jsonData), file=sys.stderr)
+            print('{"time": "' + strict_rfc3339.now_to_rfc3339_utcoffset() + '", "level": "' + level + '", "path": "' + path + '", "msg": "' + msg + '", "data": ' + jsonData + '}', file=sys.stderr)
         else:
+            level = level[:4].upper()
             print('''[{time}] [{level}] [{path}] {message}'''.format(time=strict_rfc3339.now_to_rfc3339_utcoffset(), level=level, path=path, message=msg), file=sys.stderr)

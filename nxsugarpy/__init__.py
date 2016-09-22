@@ -19,6 +19,7 @@
 #
 ##############################################################################
 
+from .config import *
 from .service import *
 from .server import *
 from .errors import *

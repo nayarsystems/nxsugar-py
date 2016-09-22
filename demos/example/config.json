@@ -1,0 +1,17 @@
+{
+    "server": {
+        "url": "localhost",
+        "user": "root",
+        "pass": "root",
+        "log-level": "debug",
+        "testing": true
+    },
+    "services": {
+        "example": {
+            "description": "This service serves as an example",
+            "path": "test.nxsugar.example",
+            "pulls": 4,
+            "max-threads": 60
+        }
+    }
+}

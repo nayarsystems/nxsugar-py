@@ -19,7 +19,7 @@
 #
 ##############################################################################
 
-# client errors
+# nexus errors
 ErrParse                    = -32700
 ErrInvalidRequest           = -32600
 ErrInternal                 = -32603
@@ -35,16 +35,16 @@ ErrInvalidPipe              = -32003
 ErrInvalidTask              = -32002
 ErrCancel                   = -32001
 ErrTimeout                  = -32000
-# nxpy errors
 ErrUnknownError             = -32098
 ErrNotSupported             = -32099
+
 # nxsugar errors
-ErrTestingMethodNotProvided = -20000
-ErrPactNotDefined           = -20001
+ErrTestingMethodNotProvided = 20000
+ErrPactNotDefined           = 20001
 
 #
 ErrStr = {
-    # client errors
+    # nexus errors
     ErrParse:                    "Parse error",
     ErrInvalidRequest:           "Invalid request",
     ErrMethodNotFound:           "Method not found",
@@ -60,9 +60,9 @@ ErrStr = {
     ErrTtlExpired:               "TTL expired",
     ErrLockNotOwned:             "Lock not owned",
     ErrConnClosed:               "Connection is closed",
-    # nxpy errors
     ErrUnknownError:             "Unknown error",
     ErrNotSupported:             "Not supported",
+
     # nxsugar errors
     ErrTestingMethodNotProvided: "Testing method not provided",
     ErrPactNotDefined:           "Pact not defined for provided input",

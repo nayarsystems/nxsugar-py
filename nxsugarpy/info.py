@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 ##############################################################################
 #
-#    nxsugarpy, build microservices over Nexus
-#    Copyright (C) 2016 by the pynexus team
+#    nxsugarpy, a Python library for building nexus services with python
+#    Copyright (C) 2016 by the nxsugarpy team
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU Lesser General Public License as published
@@ -19,8 +19,10 @@
 #
 ##############################################################################
 
-from .config import *
-from .service import *
-from .server import *
-from .errors import *
-from .log import *
+import time
+
+wanIps = "1.2.3.4"
+lanIps = ["10.0.0.1", "172.16.0.1"]
+user = "root"
+directory = "/my/dir"
+started = time.time()

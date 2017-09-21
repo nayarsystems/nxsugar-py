@@ -27,7 +27,7 @@ with open('README.rst') as f:
 
 setup(
     name='nxsugarpy',
-    version='1.3.7',
+    version='1.3.8',
     description='Build microservices over Nexus',
     long_description=long_description,
     url='https://github.com/nayarsystems/nxsugar-py',

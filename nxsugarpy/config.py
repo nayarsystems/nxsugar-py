@@ -25,6 +25,7 @@ from .log import *
 import json
 import getopt
 import sys
+from six import string_types
 
 _configServer = {
     "url": "",
@@ -90,21 +91,21 @@ def _parseConfig():
 
                 if "url" not in server:
                     return MissingConfigErr.format("server.url"), {"type": "missing_param"}
-                if not isinstance(server["url"], str):
+                if not isinstance(server["url"], string_types):
                     return InvalidConfigErr.format("server.url", "must be string"), {"type": "invalid_param"}
                 _configServer["url"] = server["url"]
                 if "user" not in server:
                     return MissingConfigErr.format("server.user"), {"type": "missing_param"}
-                if not isinstance(server["user"], str):
+                if not isinstance(server["user"], string_types):
                     return InvalidConfigErr.format("server.user", "must be string"), {"type": "invalid_param"}
                 _configServer["user"] = server["user"]
                 if "pass" not in server:
                     return MissingConfigErr.format("server.pass"), {"type": "missing_param"}
-                if not isinstance(server["pass"], str):
+                if not isinstance(server["pass"], string_types):
                     return InvalidConfigErr.format("server.pass", "must be string"), {"type": "invalid_param"}
                 _configServer["pass"] = server["pass"]
                 if "log-level" in server:
-                    if not isinstance(server["log-level"], str):
+                    if not isinstance(server["log-level"], string_types):
                         return InvalidConfigErr.format("server.log-level", "must be string"), {"type": "invalid_param"}
                     if server["log-level"] not in _logLevels:
                         return InvalidConfigErr.format("server.log-level", "must be one of [debug info warn error fatal panic]"), {"type": "invalid_param"}

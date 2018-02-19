@@ -45,13 +45,27 @@ _connStateStr = {
 }
 
 class Method(object):
-    def __init__(self, f, testf = None, inSchema=None, resSchema=None, errSchema=None, pacts=[]):
+    def __init__(self, f, testf = None, inSchema=None, resSchema=None, errSchema=None, pacts=[], methodOpts={}):
+        _populateMethodOpts(methodOpts)
+        self.disablePullLog = methodOpts["disablePullLog"]
+        self.enableResponseResultLog = methodOpts["enableResponseResultLog"]
+        self.enableResponseErrorLog = methodOpts["enableResponseErrorLog"]
         self.inSchema = inSchema
         self.resSchema = resSchema
         self.errSchema = errSchema
         self.pacts = pacts
         self.f = f
         self.testf = testf
+
+def _populateMethodOpts(opts={}):
+    if opts == None:
+        opts = {}
+    if "disablePullLog" not in opts:
+        opts["disablePullLog"] = False
+    if "enableResponseResultLog" not in opts:
+        opts["enableResponseResultLog"] = False
+    if "enableResponseErrorLog" not in opts:
+        opts["enableResponseErrorLog"] = False
 
 def _populateOpts(opts={}):
     if opts == None:
@@ -126,10 +140,10 @@ class Service(object):
         self._sharedConn = True
         self._connid = conn.connid
 
-    def addMethod(self, name, f, testf=None, schema=None):
+    def addMethod(self, name, f, testf=None, schema=None, methodOpts={}):
         if len(self._methods) == 0:
             self._initMethods()
-        method = Method(_defMethodWrapper(f))
+        method = Method(_defMethodWrapper(f), methodOpts=methodOpts)
         if testf != None:
             method.testf = _defMethodWrapper(testf)
         self._methods[name] = method
@@ -178,8 +192,8 @@ class Service(object):
     def _pingMethod(self, task):
         task.sendResult("pong")
 
-    def setHandler(self, h):
-        self._handler = Method(_defMethodWrapper(h))
+    def setHandler(self, h, methodOpts={}):
+        self._handler = Method(_defMethodWrapper(h), methodOpts=methodOpts)
 
     def setDescription(self, description):
         self.description = description
@@ -441,8 +455,7 @@ class Service(object):
 
             # A task has been pulled
             self._stats.addTasksPulled(1)
-            self.logWithFields(InfoLevel, {"type": "pull", "path": task.path, "method": task.method, "params": task.params, "tags": task.tags}, "pull {0}: task[ path={1} method={2} params={3} tags={4} ]", i, task.path, task.method, task.params, task.tags)
-
+            
             # Get method or global handler
             method = self._handler
             if method == None:
@@ -453,6 +466,10 @@ class Service(object):
                     self._stats.addThreadsUsed(-1)
                     continue
                 method = self._methods[task.method]
+
+            # Log the task
+            if not method.disablePullLog:
+                self.logWithFields(InfoLevel, {"type": "pull", "path": task.path, "method": task.method, "params": task.params, "tags": task.tags}, "pull {0}: task[ path={1} method={2} params={3} tags={4} ]", i, task.path, task.method, task.params, task.tags)
 
             # Execute the task
             taskExecute = threading.Thread(target=self._taskExecute, args=(i, method, task))
@@ -507,6 +524,12 @@ class Service(object):
                             method.testf(task)
                     else:
                         method.f(task)
+
+                # Log response
+                if method.enableResponseResultLog and task.tags and task.tags["@local-response-result"] != None:
+                    self.logWithFields(InfoLevel, {"type": "response_result", "path": task.path, "method": task.method}, "pull {0}: task[ path={1} method={2} result={3} ]", n, task.path, task.metod, task.tags["@local-response-result"])
+                if method.enableResponseErrorLog and task.tags and task.tags["@local-response-error"] != None:
+                    self.logWithFields(InfoLevel, {"type": "response_error", "path": task.path, "method": task.method}, "pull {0}: task[ path={1} method={2} error={3} ]", n, task.path, task.method, task.tags["@local-response-error"])
 
                 # Validate result and error schema
                 if not errReturned:

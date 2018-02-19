@@ -527,7 +527,7 @@ class Service(object):
 
                 # Log response
                 if method.enableResponseResultLog and task.tags and task.tags["@local-response-result"] != None:
-                    self.logWithFields(InfoLevel, {"type": "response_result", "path": task.path, "method": task.method}, "pull {0}: task[ path={1} method={2} result={3} ]", n, task.path, task.metod, task.tags["@local-response-result"])
+                    self.logWithFields(InfoLevel, {"type": "response_result", "path": task.path, "method": task.method}, "pull {0}: task[ path={1} method={2} result={3} ]", n, task.path, task.method, task.tags["@local-response-result"])
                 if method.enableResponseErrorLog and task.tags and task.tags["@local-response-error"] != None:
                     self.logWithFields(InfoLevel, {"type": "response_error", "path": task.path, "method": task.method}, "pull {0}: task[ path={1} method={2} error={3} ]", n, task.path, task.method, task.tags["@local-response-error"])
 

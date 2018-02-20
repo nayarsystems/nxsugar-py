@@ -526,9 +526,9 @@ class Service(object):
                         method.f(task)
 
                 # Log response
-                if method.enableResponseResultLog and task.tags and task.tags["@local-response-result"] != None:
+                if method.enableResponseResultLog and task.tags and "@local-response-result" in task.tags and task.tags["@local-response-result"] != None:
                     self.logWithFields(InfoLevel, {"type": "response_result", "path": task.path, "method": task.method}, "pull {0}: task[ path={1} method={2} result={3} ]", n, task.path, task.method, task.tags["@local-response-result"])
-                if method.enableResponseErrorLog and task.tags and task.tags["@local-response-error"] != None:
+                if method.enableResponseErrorLog and task.tags and "@local-response-error" in task.tags and task.tags["@local-response-error"] != None:
                     self.logWithFields(InfoLevel, {"type": "response_error", "path": task.path, "method": task.method}, "pull {0}: task[ path={1} method={2} error={3} ]", n, task.path, task.method, task.tags["@local-response-error"])
 
                 # Validate result and error schema

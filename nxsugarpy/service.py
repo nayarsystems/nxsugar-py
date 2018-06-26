@@ -26,6 +26,7 @@ from nxsugarpy.errors import *
 from nxsugarpy.helpers import *
 from nxsugarpy.stats import *
 from nxsugarpy.signal import  *
+from six import string_types
 
 import time
 import threading
@@ -688,7 +689,7 @@ def replyToWrapper(f):
     def wrapped(task):
         if isinstance(task.params, dict) and "replyTo" in task.params and isinstance(task.params["replyTo"], dict):
             replyTo = task.params["replyTo"]
-            if "path" in replyTo and isinstance(replyTo["path"], str) and "type" in replyTo and isinstance(replyTo["type"], str) and replyTo["type"] in ["pipe", "service"]:
+            if "path" in replyTo and isinstance(replyTo["path"], string_types) and "type" in replyTo and isinstance(replyTo["type"], string_types) and replyTo["type"] in ["pipe", "service"]:
                 res, errm = f(task)
                 task.tags["@local-repliedTo"] = True
                 _, err = task.accept()

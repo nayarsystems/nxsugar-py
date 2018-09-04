@@ -682,7 +682,10 @@ def _defMethodWrapper(f):
             err = formatAsJsonRpcErr(err)
             task.sendError(err["code"], err["message"], err["data"])
         else:
-            task.sendResult(res)
+            _, err = task.sendResult(res)
+            if err:
+                log(ErrorLevel, "method wrapper", "Could not send result: {0}", errToStr(err))
+                task.sendError(ErrInternal, "could not send result", None)
     return wrapped
 
 def replyToWrapper(f):
